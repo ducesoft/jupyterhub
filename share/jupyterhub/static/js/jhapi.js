@@ -60,15 +60,15 @@ define(["jquery", "utils"], function ($, utils) {
 
   JHAPI.prototype.stop_server = function (user, options) {
     options = options || {};
-    options = update(options, { type: "DELETE", dataType: null });
-    this.api_request(utils.url_path_join("users", user, "server"), options);
+    options = update(options, { type: "POST", dataType: null });
+    this.api_request(utils.url_path_join("users", "legacy", user, "server"), options);
   };
 
   JHAPI.prototype.stop_named_server = function (user, server_name, options) {
     options = options || {};
-    options = update(options, { type: "DELETE", dataType: null });
+    options = update(options, { type: "POST", dataType: null });
     this.api_request(
-      utils.url_path_join("users", user, "servers", server_name),
+      utils.url_path_join("users", "legacy", user, "servers", server_name),
       options
     );
   };
@@ -101,13 +101,8 @@ define(["jquery", "utils"], function ($, utils) {
 
   JHAPI.prototype.edit_user = function (user, userinfo, options) {
     options = options || {};
-    options = update(options, {
-      type: "PATCH",
-      dataType: null,
-      data: JSON.stringify(userinfo),
-    });
-
-    this.api_request(utils.url_path_join("users", user), options);
+    options = update(options, { type: "POST", dataType: null });
+    this.api_request(utils.url_path_join("users", "legacy", "modify", user), options);
   };
 
   JHAPI.prototype.admin_access = function (user, options) {
@@ -125,8 +120,8 @@ define(["jquery", "utils"], function ($, utils) {
 
   JHAPI.prototype.delete_user = function (user, options) {
     options = options || {};
-    options = update(options, { type: "DELETE", dataType: null });
-    this.api_request(utils.url_path_join("users", user), options);
+    options = update(options, { type: "POST", dataType: null });
+    this.api_request(utils.url_path_join("users", "legacy", "delete", user), options);
   };
 
   JHAPI.prototype.request_token = function (user, props, options) {
@@ -140,9 +135,9 @@ define(["jquery", "utils"], function ($, utils) {
 
   JHAPI.prototype.revoke_token = function (user, token_id, options) {
     options = options || {};
-    options = update(options, { type: "DELETE" });
+    options = update(options, { type: "POST" });
     this.api_request(
-      utils.url_path_join("users", user, "tokens", token_id),
+      utils.url_path_join("users", "legacy", user, "tokens", token_id),
       options
     );
   };

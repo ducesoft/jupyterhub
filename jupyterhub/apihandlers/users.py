@@ -893,6 +893,161 @@ class ActivityAPIHandler(APIHandler):
         self.db.commit()
 
 
+class UserLegacyModifyAPIHandler(APIHandler):
+    # to replace API: PATCH /users/{name}
+    @needs_scope('admin:users')
+    async def post(self, user_name):
+        user = self.find_user(user_name)
+        if user is None:
+            raise web.HTTPError(404)
+        data = self.get_json_body()
+        self._check_user_model(data)
+        if 'name' in data and data['name'] != user_name:
+            # check if the new name is already taken inside db
+            if self.find_user(data['name']):
+                raise web.HTTPError(
+                    400,
+                    "User %s already exists, username must be unique" % data['name'],
+                    )
+        for key, value in data.items():
+            if key == 'auth_state':
+                await user.save_auth_state(value)
+            else:
+                setattr(user, key, value)
+                if key == 'admin':
+                    assign_default_roles(self.db, entity=user)
+        self.db.commit()
+        user_ = self.user_model(user)
+        user_['auth_state'] = await user.get_auth_state()
+        self.write(json.dumps(user_))
+
+
+class UserLegacyDeleteAPIHandler(APIHandler):
+    # to replace API: DELETE /users/{name}
+    @needs_scope('delete:users')
+    async def post(self, user_name):
+        user = self.find_user(user_name)
+        if user is None:
+            raise web.HTTPError(404)
+        if user.name == self.current_user.name:
+            raise web.HTTPError(400, "Cannot delete yourself!")
+        if user.spawner._stop_pending:
+            raise web.HTTPError(
+                400,
+                "%s's server is in the process of stopping, please wait." % user_name,
+                )
+        if user.running:
+            await self.stop_single_user(user)
+            if user.spawner._stop_pending:
+                raise web.HTTPError(
+                    400,
+                    "%s's server is in the process of stopping, please wait."
+                    % user_name,
+                    )
+
+        await maybe_future(self.authenticator.delete_user(user))
+
+        await user.delete_spawners()
+
+        # remove from registry
+        self.users.delete(user)
+
+        self.set_status(204)
+
+
+class UserServerLegacyDelAPIHandler(APIHandler):
+    # to replace API: DELETE /users/{name}/servers
+    @needs_scope('delete:servers')
+    async def post(self, user_name, server_name=''):
+        user = self.find_user(user_name)
+        options = self.get_json_body()
+        remove = (options or {}).get('remove', False)
+
+        async def _remove_spawner(f=None):
+            """Remove the spawner object
+
+            only called after it stops successfully
+            """
+            if f:
+                # await f, stop on error,
+                # leaving resources in the db in case of failure to stop
+                await f
+            self.log.info("Deleting spawner %s", spawner._log_name)
+            await maybe_future(user._delete_spawner(spawner))
+
+            self.db.delete(spawner.orm_spawner)
+            user.spawners.pop(server_name, None)
+            self.db.commit()
+
+        if server_name:
+            if not self.allow_named_servers:
+                raise web.HTTPError(400, "Named servers are not enabled.")
+            if server_name not in user.orm_spawners:
+                raise web.HTTPError(
+                    404, f"{user_name} has no server named '{server_name}'"
+                )
+        elif remove:
+            raise web.HTTPError(400, "Cannot delete the default server")
+
+        spawner = user.spawners[server_name]
+        if spawner.pending == 'stop':
+            self.log.debug("%s already stopping", spawner._log_name)
+            self.set_header('Content-Type', 'text/plain')
+            self.set_status(202)
+            if remove:
+                # schedule remove when stop completes
+                asyncio.ensure_future(_remove_spawner(spawner._stop_future))
+            return
+
+        if spawner.pending:
+            raise web.HTTPError(
+                400,
+                f"{spawner._log_name} is pending {spawner.pending}, please wait",
+            )
+
+        stop_future = None
+        if spawner.ready:
+            # include notify, so that a server that died is noticed immediately
+            status = await spawner.poll_and_notify()
+            if status is None:
+                stop_future = await self.stop_single_user(user, server_name)
+
+        if remove:
+            if stop_future:
+                # schedule remove when stop completes
+                asyncio.ensure_future(_remove_spawner(spawner._stop_future))
+            else:
+                await _remove_spawner()
+
+        status = 202 if spawner._stop_pending else 204
+        self.set_header('Content-Type', 'text/plain')
+        self.set_status(status)
+
+
+class UserTokensLegacyDelAPIHandler(UserTokenAPIHandler):
+    # to replace API: DELETE /users/{name}/tokens
+    @needs_scope('tokens')
+    def delete(self, user_name, token_id):
+        """Delete a token"""
+        user = self.find_user(user_name)
+        if not user:
+            raise web.HTTPError(404, "No such user: %s" % user_name)
+        token = self.find_token_by_id(user, token_id)
+        # deleting an oauth token deletes *all* oauth tokens for that client
+        client_id = token.client_id
+        if token.client_id != "jupyterhub":
+            tokens = [
+                token for token in user.api_tokens if token.client_id == client_id
+            ]
+        else:
+            tokens = [token]
+        for token in tokens:
+            self.db.delete(token)
+        self.db.commit()
+        self.set_header('Content-Type', 'text/plain')
+        self.set_status(204)
+
+
 default_handlers = [
     (r"/api/user", SelfAPIHandler),
     (r"/api/users", UserListAPIHandler),
@@ -905,4 +1060,9 @@ default_handlers = [
     (r"/api/users/([^/]+)/servers/([^/]*)/progress", SpawnProgressAPIHandler),
     (r"/api/users/([^/]+)/activity", ActivityAPIHandler),
     (r"/api/users/([^/]+)/admin-access", UserAdminAccessAPIHandler),
+    (r"/api/users/legacy/modify/([^/]+)", UserLegacyModifyAPIHandler),
+    (r"/api/users/legacy/delete/([^/]+)", UserLegacyDeleteAPIHandler),
+    (r"/api/users/legacy/([^/]+)/server", UserServerLegacyDelAPIHandler),
+    (r"/api/users/legacy/([^/]+)/servers/([^/]*)", UserServerLegacyDelAPIHandler),
+    (r"/api/users/legacy/([^/]+)/tokens/([^/]*)", UserTokensLegacyDelAPIHandler),
 ]

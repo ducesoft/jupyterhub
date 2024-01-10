@@ -193,8 +193,47 @@ class GroupUsersAPIHandler(_GroupAPIHandler):
         self.write(json.dumps(self.group_model(group)))
 
 
+class GroupLegacyDelAPIHandler(_GroupAPIHandler):
+    # to replace DELETE /groups/{name}
+    @needs_scope('delete:groups')
+    def delete(self, group_name):
+        """Delete a group by name"""
+        self.check_authenticator_managed_groups()
+        group = self.find_group(group_name)
+        self.log.info("Deleting group %s", group_name)
+        self.db.delete(group)
+        self.db.commit()
+        self.set_status(204)
+
+
+class GroupUsersLegacyDelAPIHandler(_GroupAPIHandler):
+    # to replace DELETE /groups/{name}/users
+    @needs_scope('groups')
+    async def delete(self, group_name):
+        """DELETE removes users from a group"""
+        self.check_authenticator_managed_groups()
+        group = self.find_group(group_name)
+        data = self.get_json_body()
+        self._check_group_model(data)
+        if 'users' not in data:
+            raise web.HTTPError(400, "Must specify users to delete")
+        self.log.info("Removing %i users from group %s", len(data['users']), group_name)
+        self.log.debug("Removing: %s", data['users'])
+        for user in self._usernames_to_users(data['users']):
+            if user in group.users:
+                group.users.remove(user)
+            else:
+                self.log.warning(
+                    "User %s already not in group %s", user.name, group_name
+                )
+        self.db.commit()
+        self.write(json.dumps(self.group_model(group)))
+
+
 default_handlers = [
     (r"/api/groups", GroupListAPIHandler),
     (r"/api/groups/([^/]+)", GroupAPIHandler),
     (r"/api/groups/([^/]+)/users", GroupUsersAPIHandler),
+    (r"/api/groups/legacy/([^/]+)", GroupLegacyDelAPIHandler),
+    (r"/api/legacy/legacy/groups/([^/]+)/users", GroupUsersLegacyDelAPIHandler),
 ]
