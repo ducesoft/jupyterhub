@@ -26,6 +26,20 @@ FROM $BASE_IMAGE AS builder
 
 USER root
 
+RUN mv /etc/apt/sources.list /etc/apt/sources_bak.list \
+    && echo 'deb http://mirrors.163.com/ubuntu/ focal main restricted universe multiverse \
+deb http://mirrors.163.com/ubuntu/ focal-security main restricted universe multiverse \
+deb http://mirrors.163.com/ubuntu/ focal-updates main restricted universe multiverse \
+deb http://mirrors.163.com/ubuntu/ focal-proposed main restricted universe multiverse \
+deb http://mirrors.163.com/ubuntu/ focal-backports main restricted universe multiverse \
+deb-src http://mirrors.163.com/ubuntu/ focal main restricted universe multiverse \
+deb-src http://mirrors.163.com/ubuntu/ focal-security main restricted universe multiverse \
+deb-src http://mirrors.163.com/ubuntu/ focal-updates main restricted universe multiverse \
+deb-src http://mirrors.163.com/ubuntu/ focal-proposed main restricted universe multiverse \
+deb-src http://mirrors.163.com/ubuntu/ focal-backports main restricted universe multiverse' \
+  > /etc/apt/sources.list
+
+
 ENV DEBIAN_FRONTEND noninteractive
 RUN apt-get update \
  && apt-get install -yq --no-install-recommends \
@@ -57,6 +71,19 @@ RUN python3 -m pip wheel --wheel-dir wheelhouse dist/*.whl
 FROM $BASE_IMAGE
 
 USER root
+
+RUN mv /etc/apt/sources.list /etc/apt/sources_bak.list \
+    && echo 'deb http://mirrors.163.com/ubuntu/ focal main restricted universe multiverse \
+deb http://mirrors.163.com/ubuntu/ focal-security main restricted universe multiverse \
+deb http://mirrors.163.com/ubuntu/ focal-updates main restricted universe multiverse \
+deb http://mirrors.163.com/ubuntu/ focal-proposed main restricted universe multiverse \
+deb http://mirrors.163.com/ubuntu/ focal-backports main restricted universe multiverse \
+deb-src http://mirrors.163.com/ubuntu/ focal main restricted universe multiverse \
+deb-src http://mirrors.163.com/ubuntu/ focal-security main restricted universe multiverse \
+deb-src http://mirrors.163.com/ubuntu/ focal-updates main restricted universe multiverse \
+deb-src http://mirrors.163.com/ubuntu/ focal-proposed main restricted universe multiverse \
+deb-src http://mirrors.163.com/ubuntu/ focal-backports main restricted universe multiverse' \
+  > /etc/apt/sources.list
 
 ENV DEBIAN_FRONTEND=noninteractive
 
